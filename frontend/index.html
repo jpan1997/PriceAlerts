@@ -1,0 +1,170 @@
+<body>
+    <h1> Stock Price Alerts </h1>
+    <table id="alerts-table">
+        <tr>
+            <th>Ticker</th>
+            <th>Current Price</th>
+            <th>Alert Type</th>
+            <th>Target Price</th>
+        </tr>
+        <tr>
+            <td>$<input id="add-alert-ticker" type="text"></td>
+            <td></td>
+            <td>
+                <select id="add-alert-type">
+                    <option selected hidden></option>
+                    <option>moves below</option>
+                    <option>moves above</option>
+                </select>
+            </td>
+            <td>$<input id="add-alert-target" type="text"></td>
+            <td><button onclick="handleAddAlert()">+</button></td>
+        </tr>
+    </table>
+</body>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.2.0/socket.io.js"></script>
+<script>
+
+    const UPDATE_INTERVAL_MS = 1 * 1000
+
+    socket = io.connect('http://localhost:5000');
+    var updater
+
+    socket.on('connect', function () {
+        console.log('Client has connected to the server!');
+        updater = setInterval(function () { requestUpdate() }, UPDATE_INTERVAL_MS);
+    });
+
+    socket.on('disconnect', function () {
+        console.log('The client has disconnected!');
+
+        clearInterval(updater)
+    });
+
+    socket.on('msg', function (data) {
+        console.log('Received a message from the server!', data);
+    });
+
+
+    // Sends a message to the server via sockets
+    function send(message) {
+        socket.emit('msg', message);
+    };
+
+
+    function alertTypeValue(alertTypeString) {
+        switch (alertTypeString) {
+            case "moves below": return "MOVES_BELOW"
+            case "moves above": return "MOVES_ABOVE"
+        }
+    }
+
+    function alertTypeString(alertTypeValue) {
+        switch (alertTypeValue) {
+            case "MOVES_BELOW": return "moves below"
+            case "MOVES_ABOVE": return "moves above"
+        }
+    }
+
+
+    function clearAlertsTable() {
+        var table = document.getElementById('alerts-table')
+        while (table.rows.length > 2) {
+            removeAlertRow(table.rows[table.rows.length - 1])
+        }
+    }
+
+
+    function handleAddAlert() {
+        ticker = document.getElementById("add-alert-ticker")
+        alertType = document.getElementById("add-alert-type")
+        target = document.getElementById("add-alert-target")
+
+        // TODO: Sanitize input
+
+        // addAlertRow(ticker.value, alertType.value, target.value) // meh
+        sendAddAlert(ticker.value, alertType.value, target.value)
+
+        ticker.value = ""
+        alertType.value = ""
+        target.value = ""
+    }
+
+    function sendAddAlert(ticker, alertType, target) {
+        msg = {
+            "ticker": ticker,
+            "alert_type": alertTypeValue(alertType), // fix this hack
+            "target": target
+        }
+        socket.emit('add_alert', msg)
+    }
+
+    function addAlertRow(ticker, price, alertType, target) {
+        var table = document.getElementById('alerts-table');
+        var row = table.insertRow(2);
+
+        tickerCell = row.insertCell(0)
+        tickerCell.innerHTML = "$ " + ticker
+        tickerCell.value = ticker
+
+        priceCell = row.insertCell(1)
+        priceCell.innerHTML = "$" + price
+
+        typeCell = row.insertCell(2)
+        typeCell.innerHTML = alertTypeString(alertType)
+        typeCell.value = alertType
+
+        targetCell = row.insertCell(3)
+        targetCell.innerHTML = "$" + target
+        targetCell.value = target
+
+        removeAlertButton = document.createElement("BUTTON")
+        removeAlertButton.innerHTML = "-"
+        removeAlertButton.onclick = function () { handleRemoveAlert(row) }
+        row.insertCell(4).appendChild(removeAlertButton)
+    }
+
+    function handleRemoveAlert(row) {
+        // TODO: use value, not innerHTML
+        ticker = row.cells[0].value
+        alertType = row.cells[2].value
+        target = row.cells[3].value
+        // removeAlertRow(row) // meh
+        sendRemoveAlert(ticker, alertType, target)
+    }
+
+    function removeAlertRow(row) {
+        row.parentNode.removeChild(row)
+    }
+
+    function sendRemoveAlert(ticker, alertType, target) {
+        msg = {
+            "ticker": ticker,
+            "alert_type": alertType,
+            "target": target
+        }
+        socket.emit('remove_alert', msg)
+    }
+
+
+
+
+    function requestUpdate() {
+        socket.emit("update_req", "")
+    }
+
+    // consider update func vs init func
+    // update func = prices
+    // init func = alerts list
+    socket.on("update_resp", function (data) {
+        clearAlertsTable()
+        for (ticker in data.alerts) {
+            for (i in data.alerts[ticker]) {
+                alert = data.alerts[ticker][i]
+                addAlertRow(alert.ticker, data.prices[alert.ticker], alert.alert_type, alert.target)
+            }
+        }
+    });
+
+</script>
